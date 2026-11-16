@@ -1,0 +1,217 @@
+/**
+ * Xochi · Generadores v2 — backend (Google Apps Script, script vinculado a la hoja de cálculo)
+ * Hojas: Diaria, Semanal, Compras, Ajustes. Fotos y firmas se guardan en Drive (carpeta "Xochi Generadores - Fotos").
+ */
+var TZ = 'America/Guatemala';
+var FOLDER_NAME = 'Xochi Generadores - Fotos';
+var GARITAS = ['garita1', 'garita2', 'garita3', 'garita4'];
+var CAPACIDADES = { garita1: 66, garita2: 26, garita3: 26, garita4: 66 };
+var DEFAULTS = {
+  umbral_diesel: '70', voltaje_min: '24.5', servicio_intervalo: '500',
+  servicio_base_garita1: '0', servicio_base_garita2: '0', servicio_base_garita3: '0', servicio_base_garita4: '0'
+};
+var EDITABLE_SETTINGS = ['servicio_intervalo', 'servicio_base_garita1', 'servicio_base_garita2', 'servicio_base_garita3', 'servicio_base_garita4'];
+var INITIAL_HEADERS = {
+  Diaria: ['id', 'garita', 'km', 'tecnico', 'fecha', 'hora', 'l1n', 'l2n', 'l1l2', 'a_l1', 'a_l2', 'a_n', 'kwh', 'nivel', 'horas_h', 'horas_m', 'bateria_v', 'notas', 'firma_id', 'alertas', 'ts', 'ts_ms'],
+  Semanal: ['id', 'garita', 'km', 'tecnico', 'fecha', 'hora'],
+  Compras: ['id', 'garita', 'km', 'tecnico', 'fecha_compra', 'cant_encontrada_gal', 'horas_trabajadas', 'galones_comprados', 'cant_despues_gal', 'precio_total_q', 'no_recibo', 'saldo_uno', 'nivel_encontrado_pct', 'nivel_despues_pct', 'foto_id', 'ts', 'ts_ms']
+};
+
+// ---------- entrada ----------
+function doGet(e) {
+  try {
+    var a = (e.parameter.action || 'getAll');
+    if (a === 'getAll') return json_(getAll_());
+    if (a === 'getPhoto') return json_(getPhoto_(e.parameter.id));
+    return json_({ ok: false, error: 'Acción desconocida' });
+  } catch (err) { return json_({ ok: false, error: String(err) }); }
+}
+
+function doPost(e) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+    var p = JSON.parse(e.postData.contents);
+    var r;
+    if (p.action === 'saveDaily') r = saveDaily_(p);
+    else if (p.action === 'saveWeekly') r = saveWeekly_(p);
+    else if (p.action === 'savePurchase') r = savePurchase_(p);
+    else if (p.action === 'saveSettings') r = saveSettings_(p);
+    else r = { ok: false, error: 'Acción desconocida' };
+    return json_(r);
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  } finally {
+    try { lock.releaseLock(); } catch (x) {}
+  }
+}
+
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ---------- lectura ----------
+function getAll_() {
+  return {
+    ok: true,
+    diaria: readRows_('Diaria'),
+    semanal: readRows_('Semanal'),
+    compras: readRows_('Compras'),
+    settings: readSettings_(),
+    capacidades: CAPACIDADES
+  };
+}
+
+function readRows_(name) {
+  var sh = getSheet_(name);
+  var last = sh.getLastRow(), cols = sh.getLastColumn();
+  if (last < 2 || cols < 1) return [];
+  var vals = sh.getRange(1, 1, last, cols).getDisplayValues();
+  var head = vals[0], rows = [];
+  for (var i = vals.length - 1; i >= 1 && rows.length < 500; i--) {   // más recientes primero, máx. 500
+    var o = {};
+    for (var c = 0; c < head.length; c++) if (head[c]) o[head[c]] = vals[i][c];
+    rows.push(o);
+  }
+  return rows;
+}
+
+function readSettings_() {
+  var sh = getSheet_('Ajustes'), out = {};
+  for (var k in DEFAULTS) out[k] = DEFAULTS[k];
+  var last = sh.getLastRow();
+  if (last >= 1) sh.getRange(1, 1, last, 2).getDisplayValues().forEach(function (r) { if (r[0] && r[1] !== '') out[r[0]] = r[1]; });
+  return out;
+}
+
+function getPhoto_(id) {
+  if (!id || !/^[A-Za-z0-9_-]{10,}$/.test(id)) throw new Error('Id inválido');
+  var folderId = folder_().getId(), file = DriveApp.getFileById(id), ok = false, it = file.getParents();
+  while (it.hasNext()) { if (it.next().getId() === folderId) ok = true; }
+  if (!ok) throw new Error('Archivo no permitido');
+  var b = file.getBlob();
+  return { ok: true, data: 'data:' + b.getContentType() + ';base64,' + Utilities.base64Encode(b.getBytes()) };
+}
+
+// ---------- escritura ----------
+function saveDaily_(p) {
+  checkGarita_(p.garita);
+  var d = p.datos || {};
+  ['tecnico', 'fecha', 'hora', 'nivel', 'horas_h', 'bateria_v'].forEach(function (k) { if (!d[k]) throw new Error('Falta el campo: ' + k); });
+  if (!p.firma || String(p.firma).length < 100) throw new Error('Falta la firma del técnico');
+  var rec = baseRec_(p);
+  copyDatos_(rec, d);
+  rec.firma_id = saveImage_(p.firma, 'firma_diaria_' + p.garita);
+  rec.alertas = String(p.alertas || '');
+  stamp_(rec);
+  appendObj_('Diaria', rec);
+  return { ok: true, id: rec.id, ts: rec.ts, ts_ms: rec.ts_ms };
+}
+
+function saveWeekly_(p) {
+  checkGarita_(p.garita);
+  var d = p.datos || {};
+  if (!d.tecnico || !d.fecha || !d.hora) throw new Error('Faltan técnico, fecha u hora');
+  if (!p.firma || String(p.firma).length < 100) throw new Error('Falta la firma del técnico');
+  var fotos = p.fotos || {}, req = ['filtro_aire', 'filtro_diesel', 'varilla_aceite', 'pantalla_generador'];
+  req.forEach(function (k) { if (!fotos[k]) throw new Error('Falta la foto: ' + k); });
+  var rec = baseRec_(p);
+  copyDatos_(rec, d);
+  req.forEach(function (k) { rec['foto_' + k + '_id'] = saveImage_(fotos[k], 'semanal_' + p.garita + '_' + k); });
+  rec.firma_id = saveImage_(p.firma, 'firma_semanal_' + p.garita);
+  rec.alertas = String(p.alertas || '');
+  stamp_(rec);
+  appendObj_('Semanal', rec);
+  return { ok: true, id: rec.id, ts: rec.ts, ts_ms: rec.ts_ms };
+}
+
+function savePurchase_(p) {
+  checkGarita_(p.garita);
+  var d = p.datos || {};
+  ['tecnico', 'fecha_compra', 'cant_encontrada_gal', 'horas_trabajadas', 'cant_despues_gal', 'galones_comprados', 'precio_total_q', 'no_recibo'].forEach(function (k) {
+    if (!d[k]) throw new Error('Falta el campo: ' + k);
+  });
+  if (!p.foto) throw new Error('Falta la foto de la factura y saldo de la tarjeta UNO');
+  var cap = CAPACIDADES[p.garita];
+  var enc = parseFloat(String(d.cant_encontrada_gal).replace(',', '.')), des = parseFloat(String(d.cant_despues_gal).replace(',', '.'));
+  var rec = baseRec_(p);
+  copyDatos_(rec, d);
+  rec.nivel_encontrado_pct = isNaN(enc) ? '' : String(Math.round(Math.min(cap, enc) / cap * 1000) / 10);
+  rec.nivel_despues_pct = isNaN(des) ? '' : String(Math.round(Math.min(cap, des) / cap * 1000) / 10);
+  rec.foto_id = saveImage_(p.foto, 'compra_' + p.garita);
+  stamp_(rec);
+  appendObj_('Compras', rec);
+  return { ok: true, id: rec.id, ts: rec.ts, ts_ms: rec.ts_ms, nivel_despues_pct: rec.nivel_despues_pct, nivel_encontrado_pct: rec.nivel_encontrado_pct };
+}
+
+function saveSettings_(p) {
+  var sh = getSheet_('Ajustes'), s = p.settings || {}, cur = readSettings_();
+  EDITABLE_SETTINGS.forEach(function (k) {
+    if (s[k] !== undefined && s[k] !== '' && !isNaN(parseFloat(s[k]))) cur[k] = String(s[k]);
+  });
+  var rows = Object.keys(cur).map(function (k) { return [k, cur[k]]; });
+  sh.clear();
+  sh.getRange(1, 1, rows.length, 2).setNumberFormat('@').setValues(rows);
+  return { ok: true, settings: cur };
+}
+
+// ---------- utilidades ----------
+function checkGarita_(g) { if (GARITAS.indexOf(g) < 0) throw new Error('Garita inválida'); }
+function baseRec_(p) { return { id: Utilities.getUuid(), garita: p.garita, km: String(p.km || '') }; }
+function stamp_(rec) {
+  var now = new Date();
+  rec.ts = Utilities.formatDate(now, TZ, 'dd/MM/yyyy HH:mm:ss');
+  rec.ts_ms = String(now.getTime());
+}
+function copyDatos_(rec, d) {
+  Object.keys(d).forEach(function (k) {
+    if (!/^[a-z0-9_]{1,40}$/.test(k) || k in rec) return;
+    rec[k] = String(d[k] == null ? '' : d[k]).substring(0, 2000);
+  });
+}
+
+function folder_() {
+  var it = DriveApp.getFoldersByName(FOLDER_NAME);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(FOLDER_NAME);
+}
+
+function saveImage_(dataUrl, name) {
+  var m = /^data:(image\/(?:jpeg|png));base64,(.+)$/.exec(String(dataUrl));
+  if (!m) throw new Error('Imagen inválida');
+  var ext = m[1] === 'image/png' ? '.png' : '.jpg';
+  var blob = Utilities.newBlob(Utilities.base64Decode(m[2]), m[1], name + '_' + Date.now() + ext);
+  return folder_().createFile(blob).getId();
+}
+
+function getSheet_(name) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    var h = INITIAL_HEADERS[name];
+    if (h) { setCols_(sh, 1, h); sh.setFrozenRows(1); }
+  }
+  return sh;
+}
+
+// Crea columnas nuevas (texto plano) y escribe encabezados
+function setCols_(sh, startCol, names) {
+  var rng = sh.getRange(1, startCol, 1, names.length);
+  rng.setNumberFormat('@').setValues([names]).setFontWeight('bold').setBackground('#1B2A4A').setFontColor('#FFFFFF');
+  sh.getRange(2, startCol, Math.max(sh.getMaxRows() - 1, 1), names.length).setNumberFormat('@');
+}
+
+function appendObj_(name, rec) {
+  var sh = getSheet_(name);
+  var cols = sh.getLastColumn();
+  var head = cols > 0 ? sh.getRange(1, 1, 1, cols).getValues()[0] : [];
+  var missing = Object.keys(rec).filter(function (k) { return head.indexOf(k) < 0; });
+  if (missing.length) {
+    setCols_(sh, head.length + 1, missing);
+    head = head.concat(missing);
+    if (sh.getFrozenRows() < 1) sh.setFrozenRows(1);
+  }
+  var row = head.map(function (k) { return rec[k] === undefined ? '' : rec[k]; });
+  var r = Math.max(sh.getLastRow(), 1) + 1;
+  sh.getRange(r, 1, 1, row.length).setNumberFormat('@').setValues([row]);
+}
