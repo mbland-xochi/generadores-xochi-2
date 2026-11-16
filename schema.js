@@ -4,7 +4,7 @@
     { id: 'garita1', nombre: 'Garita 1', km: 'KM 145', cap: 66 },
     { id: 'garita2', nombre: 'Garita 2', km: 'KM 152', cap: 26 },
     { id: 'garita3', nombre: 'Garita 3', km: 'KM 162', cap: 26 },
-    { id: 'garita4', nombre: 'Garita 4', km: 'KM 173', cap: 66 },
+    { id: 'garita4', nombre: 'Garita 4', km: 'KM 170', cap: 66 },
   ];
 
   // Reglas
