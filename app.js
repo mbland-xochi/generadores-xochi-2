@@ -49,7 +49,7 @@
     else if (f.t === 'area' || f.area) ctl = `<textarea id="${id}" rows="2"></textarea>`;
     else ctl = `<input id="${id}" type="text" ${f.num ? 'inputmode="decimal"' : ''} ${f.ph ? `placeholder="${esc(f.ph)}"` : ''} ${f.auto ? `data-auto="${f.auto}"` : ''}>`;
     const wide = (f.t === 'area' || f.area) ? ' style="grid-column:1/-1"' : '';
-    return `<div class="field" data-k="${f.k}"${wide}><label for="${id}">${esc(f.label)}${req}</label>${ctl}${f.pct ? `<div class="hint" id="${id}_hint"></div>` : ''}</div>`;
+    return `<div class="field" data-k="${f.k}"${wide}><label for="${id}">${esc(f.label)}${req}${f.pct ? `<span class="hint" id="${id}_hint"></span>` : ''}</label>${ctl}</div>`;
   }
   function groupedHTML(fields, idp) {
     let out = '', cur = null, open = false;
@@ -75,7 +75,7 @@
 
     $('#formCompra').innerHTML =
       `<div class="grid">${PURCHASE_FIELDS.map((f) => fieldHTML(f, 'c_')).join('')}</div>` +
-      `<div class="fgroup">Factura</div><div class="photos">${photoHTML('factura', 'Foto de la factura y saldo de la tarjeta UNO')}</div>` +
+      `<div class="fgroup">Factura</div><div class="photos">${photoHTML('factura', 'Foto de la factura y (opcional) saldo de la tarjeta UNO')}</div>` +
       '<div id="errC"></div><button type="submit" class="btn green submit">Registrar abastecimiento</button>';
 
     ['sigD', 'sigW'].forEach((id) => (pads[id] = makePad($('#' + id))));
@@ -236,7 +236,7 @@
     const ant = num(vals.cant_despues_gal), enc = num(vals.cant_encontrada_gal);
     if (ant != null && ant > g.cap) { missing.push('Cantidad después de llenado excede la capacidad (' + g.cap + ' gal)'); $('#c_cant_despues_gal').closest('.field').classList.add('err'); }
     if (enc != null && enc > g.cap) { missing.push('Cantidad encontrada excede la capacidad (' + g.cap + ' gal)'); $('#c_cant_encontrada_gal').closest('.field').classList.add('err'); }
-    if (!photos.compra.factura) { missing.push('Foto de la factura y saldo de la tarjeta UNO'); $('[data-photo=factura]', form).classList.add('err'); }
+    if (!photos.compra.factura) { missing.push('Foto de la factura y (opcional) saldo de la tarjeta UNO'); $('[data-photo=factura]', form).classList.add('err'); }
     if (missing.length) return showErr('errC', missing);
     $('#errC').innerHTML = '';
     const foto = photos.compra.factura;
