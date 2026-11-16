@@ -3,6 +3,20 @@
   const NAVY = [27, 42, 74], CYAN = [0, 147, 208], GREEN = [10, 166, 76], RED = [200, 30, 70], GREY = [244, 246, 248];
   const W = 215.9, M = 14;
 
+  // Carga las librerías de PDF desde /vendor; si no están en el repositorio, usa cdnjs como respaldo.
+  function loadScript(src) {
+    return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('No se pudo cargar ' + src)); document.head.appendChild(s); });
+  }
+  async function ensureLib() {
+    if (window.jspdf && window.jspdf.jsPDF && new window.jspdf.jsPDF().autoTable) return;
+    const base = 'https://cdnjs.cloudflare.com/ajax/libs/';
+    if (!(window.jspdf && window.jspdf.jsPDF)) { try { await loadScript('vendor/jspdf.umd.min.js'); } catch (e) {} }
+    if (!(window.jspdf && window.jspdf.jsPDF)) await loadScript(base + 'jspdf/2.5.1/jspdf.umd.min.js');
+    if (!new window.jspdf.jsPDF().autoTable) {
+      try { await loadScript('vendor/jspdf.plugin.autotable.min.js'); } catch (e) {}
+      if (!new window.jspdf.jsPDF().autoTable) await loadScript(base + 'jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    }
+  }
   function newDoc() { return new window.jspdf.jsPDF({ unit: 'mm', format: 'letter' }); }
 
   let LOGO = null;
@@ -104,6 +118,7 @@
   const fn = (tipo, rec) => tipo + '_' + String(rec.km).replace(/\s/g, '') + '_' + String(rec.fecha || '').replace(/\//g, '-') + '.pdf';
 
   async function daily(rec, g, firma) {
+    await ensureLib();
     const doc = newDoc(); let y = header(doc, 'CHECK LIST RUTINARIO — INSPECCIÓN DIARIA', g);
     y = infoTable(doc, y, [['Garita', g.nombre, 'Kilómetro', g.km], ['Fecha', rec.fecha, 'Hora', rec.hora], ['Técnico', { content: rec.tecnico, colSpan: 3 }]]);
     y = sectionTable(doc, y, 'VOLTAJES (V)', [{ label: 'L1 / N', value: rec.l1n }, { label: 'L2 / N', value: rec.l2n }, { label: 'L1 / L2', value: rec.l1l2 }]);
@@ -122,6 +137,7 @@
   }
 
   async function weekly(rec, g, photos, firma) {
+    await ensureLib();
     const doc = newDoc(); let y = header(doc, 'REVISIÓN SEMANAL DE GENERADOR', g);
     y = infoTable(doc, y, [['Garita', g.nombre, 'Kilómetro', g.km], ['Fecha', rec.fecha, 'Hora', rec.hora], ['Técnico', { content: rec.tecnico, colSpan: 3 }]]);
     XS.WEEKLY_SECTIONS.forEach((s) => {
@@ -154,6 +170,7 @@
   }
 
   async function purchase(rec, g, foto) {
+    await ensureLib();
     const doc = newDoc(); let y = header(doc, 'REPORTE DE ABASTECIMIENTO DE COMBUSTIBLE', g);
     const gal = XS.num(rec.galones_comprados), tot = XS.num(rec.precio_total_q);
     const ppg = gal && tot ? (tot / gal).toFixed(2) : '—';
