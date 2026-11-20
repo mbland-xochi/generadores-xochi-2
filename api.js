@@ -4,16 +4,31 @@
   const DEMO = !URL_;
   const CAP = { garita1: 66, garita2: 26, garita3: 26, garita4: 66 };
 
-  async function get(params) {
-    const r = await fetch(URL_ + '?' + new URLSearchParams(params).toString());
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'Error del servidor');
-    return j;
+  // ---------- sesión (la clave nunca se guarda; solo el token firmado que entrega el servidor) ----------
+  const SKEY = 'xochi_session';
+  let memSession = null;
+  class AuthError extends Error { constructor(m) { super(m || 'Sesión no válida o expirada.'); this.code = 'AUTH'; } }
+  const localValid = (s) => !!s && Number(String(s).split('.')[0]) > Date.now();
+  function sessionGet() {
+    let s = memSession;
+    try { s = localStorage.getItem(SKEY) || s; } catch (e) {}
+    return localValid(s) ? s : null;
   }
-  async function post(body) {
+  function sessionSet(s) {
+    memSession = s;
+    try { s ? localStorage.setItem(SKEY, s) : localStorage.removeItem(SKEY); } catch (e) {}
+  }
+  const authFail = () => window.dispatchEvent(new Event('xochi-auth'));
+  function needAuth() { if (!sessionGet()) { authFail(); throw new AuthError(); } }
+
+  async function post(body, auth = true) {
+    if (auth) { needAuth(); body = Object.assign({ session: sessionGet() }, body); }
     const r = await fetch(URL_, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body) });
     const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'Error del servidor');
+    if (!j.ok) {
+      if (j.code === 'AUTH') { sessionSet(null); authFail(); throw new AuthError(j.error); }
+      throw new Error(j.error || 'Error del servidor');
+    }
     return j;
   }
 
@@ -81,19 +96,26 @@
 
   window.API = {
     DEMO,
-    async getAll() { if (DEMO) { if (!store.diaria.length) seed(); return demo.getAll(); } return get({ action: 'getAll' }); },
-    async saveDaily(p) { return DEMO ? demo.save('diaria', p) : post(Object.assign({ action: 'saveDaily' }, p)); },
-    async saveWeekly(p) { return DEMO ? demo.save('semanal', p) : post(Object.assign({ action: 'saveWeekly' }, p)); },
-    async savePurchase(p) { return DEMO ? demo.save('compras', p) : post(Object.assign({ action: 'savePurchase' }, p)); },
+    hasSession: () => !!sessionGet(),
+    async login(clave) {
+      if (DEMO) { if (clave !== 'demo') throw new Error('Clave incorrecta.'); sessionSet('9999999999999.demo'); return; }
+      const j = await post({ action: 'login', clave }, false);
+      sessionSet(j.data.session);
+    },
+    logout() { sessionSet(null); this._cache = {}; },
+    async getAll() { if (DEMO) { needAuth(); if (!store.diaria.length) seed(); return demo.getAll(); } return post({ action: 'getAll' }); },
+    async saveDaily(p) { if (DEMO) { needAuth(); return demo.save('diaria', p); } return post(Object.assign({ action: 'saveDaily' }, p)); },
+    async saveWeekly(p) { if (DEMO) { needAuth(); return demo.save('semanal', p); } return post(Object.assign({ action: 'saveWeekly' }, p)); },
+    async savePurchase(p) { if (DEMO) { needAuth(); return demo.save('compras', p); } return post(Object.assign({ action: 'savePurchase' }, p)); },
     async saveSettings(settings) {
-      if (DEMO) { Object.assign(store.settings, settings); return { ok: true, settings: store.settings }; }
+      if (DEMO) { needAuth(); Object.assign(store.settings, settings); return { ok: true, settings: store.settings }; }
       return post({ action: 'saveSettings', settings });
     },
     _cache: {},
     async getPhoto(id) {
       if (!id) return null;
       if (this._cache[id]) return this._cache[id];
-      const data = DEMO ? store.photos[id] : (await get({ action: 'getPhoto', id })).data;
+      const data = DEMO ? (needAuth(), store.photos[id]) : (await post({ action: 'getPhoto', id })).data;
       this._cache[id] = data; return data;
     }
   };

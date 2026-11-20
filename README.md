@@ -1,6 +1,6 @@
 # Xochi · Generadores v2
 
-Herramienta web (GitHub Pages) + Google Apps Script/Sheets para inspecciones diarias, semanales y abastecimiento de combustible de los 4 generadores (KM 145, 152, 162, 173).
+Herramienta web (GitHub Pages) + Google Apps Script/Sheets para inspecciones diarias, semanales y abastecimiento de combustible de los 4 generadores (KM 145, 152, 162, 170).
 
 ## Páginas
 - **Resumen**: dashboard de los 4 generadores (estado, combustible, horas, servicio, batería, alertas) y botones de PDF.
@@ -21,3 +21,9 @@ Herramienta web (GitHub Pages) + Google Apps Script/Sheets para inspecciones dia
 5. Al actualizar solo el código del Apps Script: Implementar > Gestionar implementaciones > editar > Nueva versión (misma URL).
 
 Sin URL en `config.js` la herramienta corre en modo demo.
+
+## Clave de acceso
+- Al abrir la página se pide una clave. La clave **solo vive en `Code.gs`** (constante `CLAVE`, al inicio). No aparece en el HTML, ni en `config.js`, ni viaja en cada petición.
+- Sin sesión válida el servidor no devuelve ni modifica ningún dato (lecturas incluidas).
+- Sesión de 12 horas (`SESSION_HOURS`). 5 intentos fallidos bloquean el acceso 5 minutos (`MAX_FAILS`, `LOCK_MINUTES`).
+- Para cambiar la clave: edita `CLAVE` en Apps Script y crea una nueva versión de la implementación. Todas las sesiones abiertas se cierran.

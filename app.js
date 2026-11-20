@@ -373,11 +373,12 @@
   // ---------- carga ----------
   function renderAll() { renderResumen(); renderHistorial(); hints(); }
   async function refresh() {
+    if (!API.hasSession()) return;
     try {
       const d = await API.getAll();
       DATA = { diaria: d.diaria || [], semanal: d.semanal || [], compras: d.compras || [], settings: Object.assign({}, XS.DEFAULTS, d.settings || {}) };
       $('#conn').className = 'conn ok'; renderAll();
-    } catch (e) { $('#conn').className = 'conn err'; toast(netMsg(e), true); }
+    } catch (e) { if (e.code === 'AUTH') return; $('#conn').className = 'conn err'; toast(netMsg(e), true); }
   }
 
   // ---------- inicio ----------
@@ -394,8 +395,38 @@
       $('#formDiaria').hidden = state.tipo !== 'diaria'; $('#formSemanal').hidden = state.tipo !== 'semanal'; $('#inspDone').hidden = true; sizePads();
     });
     const t = location.hash.replace('#', ''); if (['resumen', 'inspeccion', 'abastecimiento', 'historial'].includes(t)) goto(t); else fillAuto();
-    refresh();
-    setInterval(() => { if (!document.hidden && !state.busy) refresh(); }, 30000);
+    initAcceso();
+    setInterval(() => { if (!document.hidden && !state.busy && API.hasSession()) refresh(); }, 30000);
+  }
+
+  // ---------- acceso (la clave la valida el servidor; aquí solo se envía lo que se escribe) ----------
+  function showLogin(msg) {
+    document.body.classList.add('locked');
+    $('#login').hidden = false;
+    $('#loginMsg').textContent = msg || 'Acceso restringido. Ingresa la clave para continuar.';
+    $('#loginErr').textContent = ''; $('#loginClave').value = '';
+    $('#loginDemo').hidden = !API.DEMO;
+    setTimeout(() => $('#loginClave').focus(), 50);
+  }
+  function startSession() {
+    $('#login').hidden = true; document.body.classList.remove('locked');
+    fillAuto(); refresh();
+  }
+  function initAcceso() {
+    $('#loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const clave = $('#loginClave').value; if (!clave) return;
+      const btn = $('#loginBtn'); btn.disabled = true; btn.textContent = 'Verificando…'; $('#loginErr').textContent = '';
+      try { await API.login(clave); $('#loginClave').value = ''; startSession(); }
+      catch (err) { $('#loginErr').textContent = netMsg(err); $('#loginClave').select(); }
+      finally { btn.disabled = false; btn.textContent = 'Entrar'; }
+    });
+    $('#btnSalir').onclick = () => {
+      API.logout(); DATA = { diaria: [], semanal: [], compras: [], settings: Object.assign({}, XS.DEFAULTS) };
+      $('#conn').className = 'conn'; renderAll(); showLogin('Sesión cerrada.');
+    };
+    window.addEventListener('xochi-auth', () => { if ($('#login').hidden) showLogin('Tu sesión expiró. Ingresa la clave de nuevo.'); });
+    if (API.hasSession()) startSession(); else showLogin();
   }
   init();
 })();

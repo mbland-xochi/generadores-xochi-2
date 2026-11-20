@@ -3,6 +3,12 @@
  * Hojas: Diaria, Semanal, Compras, Ajustes. Fotos y firmas se guardan en Drive (carpeta "Xochi Generadores - Fotos").
  */
 var TZ = 'America/Guatemala';
+
+// ---------- SEGURIDAD (la clave SOLO vive aquí, nunca en el HTML ni en config.js) ----------
+var CLAVE = 'CAMBIA-ESTA-CLAVE';   // contraseña de acceso. Cámbiala antes de implementar.
+var SESSION_HOURS = 12;            // duración de la sesión
+var MAX_FAILS = 5;                 // intentos fallidos antes de bloquear
+var LOCK_MINUTES = 5;              // minutos de bloqueo
 var FOLDER_NAME = 'Xochi Generadores - Fotos';
 var GARITAS = ['garita1', 'garita2', 'garita3', 'garita4'];
 var CAPACIDADES = { garita1: 66, garita2: 26, garita3: 26, garita4: 66 };
@@ -18,32 +24,95 @@ var INITIAL_HEADERS = {
 };
 
 // ---------- entrada ----------
+// Todo pasa por POST (la sesión nunca viaja en la URL). GET no devuelve datos.
 function doGet(e) {
-  try {
-    var a = (e.parameter.action || 'getAll');
-    if (a === 'getAll') return json_(getAll_());
-    if (a === 'getPhoto') return json_(getPhoto_(e.parameter.id));
-    return json_({ ok: false, error: 'Acción desconocida' });
-  } catch (err) { return json_({ ok: false, error: String(err) }); }
+  return json_({ ok: true, status: 'Xochi Generadores API' });
 }
 
 function doPost(e) {
-  var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(20000);
     var p = JSON.parse(e.postData.contents);
-    var r;
-    if (p.action === 'saveDaily') r = saveDaily_(p);
-    else if (p.action === 'saveWeekly') r = saveWeekly_(p);
-    else if (p.action === 'savePurchase') r = savePurchase_(p);
-    else if (p.action === 'saveSettings') r = saveSettings_(p);
-    else r = { ok: false, error: 'Acción desconocida' };
-    return json_(r);
+
+    if (p.action === 'login') return withLock_(function () { return doLogin(p); });
+
+    // Sin sesión válida el servidor no lee ni modifica nada.
+    if (!isValidSession(p.session)) return json_({ ok: false, code: 'AUTH', error: 'Sesión no válida o expirada.' });
+
+    if (p.action === 'getAll') return json_(getAll_());
+    if (p.action === 'getPhoto') return json_(getPhoto_(p.id));
+    return withLock_(function () {
+      if (p.action === 'saveDaily') return saveDaily_(p);
+      if (p.action === 'saveWeekly') return saveWeekly_(p);
+      if (p.action === 'savePurchase') return savePurchase_(p);
+      if (p.action === 'saveSettings') return saveSettings_(p);
+      return { ok: false, error: 'Acción desconocida' };
+    });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
-  } finally {
-    try { lock.releaseLock(); } catch (x) {}
   }
+}
+
+function withLock_(fn) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return json_(fn()); } finally { try { lock.releaseLock(); } catch (x) {} }
+}
+
+// ---------- autenticación ----------
+function doLogin(payload) {
+  if (CLAVE === 'CAMBIA-ESTA-CLAVE') return { ok: false, error: 'El servidor aún no tiene una CLAVE configurada (Code.gs).' };
+  var cache = CacheService.getScriptCache();
+  var fails = parseInt(cache.get('login_fails') || '0', 10) || 0;
+  if (fails >= MAX_FAILS) {
+    var t = parseInt(cache.get('login_fails_t') || '0', 10) || Date.now();
+    var left = Math.max(1, Math.ceil((t + LOCK_MINUTES * 60000 - Date.now()) / 60000));
+    return { ok: false, error: 'Demasiados intentos. Espera ' + left + (left === 1 ? ' minuto.' : ' minutos.') };
+  }
+  var clave = String((payload && payload.clave) || '').substring(0, 200);
+  if (!safeEqual(clave, CLAVE)) {
+    cache.put('login_fails', String(fails + 1), LOCK_MINUTES * 60);   // el contador expira a los LOCK_MINUTES
+    cache.put('login_fails_t', String(Date.now()), LOCK_MINUTES * 60);
+    return { ok: false, error: 'Clave incorrecta.' };
+  }
+  cache.remove('login_fails');
+  cache.remove('login_fails_t');
+  var exp = Date.now() + SESSION_HOURS * 3600 * 1000;
+  return { ok: true, data: { session: exp + '.' + signSession(String(exp)) } };
+}
+
+function isValidSession(s) {
+  if (typeof s !== 'string') return false;
+  var i = s.indexOf('.');
+  if (i < 1) return false;
+  var expStr = s.substring(0, i), sig = s.substring(i + 1);
+  if (!/^\d{10,15}$/.test(expStr)) return false;
+  var exp = Number(expStr), now = Date.now();
+  if (exp <= now || exp > now + SESSION_HOURS * 3600 * 1000 + 60000) return false;
+  return safeEqual(sig, signSession(expStr));
+}
+
+// Llave de firma: secreto aleatorio guardado en el servidor + CLAVE (si cambias la CLAVE, todas las sesiones se invalidan).
+function sessionKey_() {
+  var props = PropertiesService.getScriptProperties();
+  var sec = props.getProperty('SESSION_SECRET');
+  if (!sec) {
+    sec = Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('SESSION_SECRET', sec);
+  }
+  return sec + '|' + CLAVE;
+}
+
+function signSession(msg) {
+  var sig = Utilities.computeHmacSha256Signature(String(msg), sessionKey_());
+  return Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
+}
+
+// Comparación en tiempo constante
+function safeEqual(a, b) {
+  a = String(a); b = String(b);
+  var diff = a.length ^ b.length, n = Math.max(a.length, b.length);
+  for (var i = 0; i < n; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return diff === 0;
 }
 
 function json_(o) {

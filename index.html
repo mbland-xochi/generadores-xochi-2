@@ -12,7 +12,7 @@
 <body>
 <header class="top">
   <div class="brand"><img class="logo-img" src="logo.png" alt="Xochi"><span class="brand-sub">Generadores</span></div>
-  <span id="conn" class="conn" title="Estado de conexión"></span>
+  <div class="row gap"><button class="btn ghost sm" id="btnSalir" type="button">Salir</button><span id="conn" class="conn" title="Estado de conexión"></span></div>
 </header>
 <nav class="tabs" id="tabs">
   <button data-tab="resumen" class="on">Resumen</button>
@@ -69,6 +69,17 @@
 </div>
 <div id="toast" class="toast" hidden></div>
 
+<div id="login" class="login" hidden>
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <img src="logo.png" alt="Xochi" class="login-logo">
+    <h1>Herramienta Generadores</h1>
+    <p id="loginMsg">Acceso restringido. Ingresa la clave para continuar.</p>
+    <div class="field"><label for="loginClave">CLAVE DE ACCESO</label><input id="loginClave" type="password" autocomplete="current-password" required></div>
+    <div id="loginErr" class="login-err" role="alert"></div>
+    <button type="submit" class="btn navy submit" id="loginBtn">Entrar</button>
+    <p id="loginDemo" class="muted small" hidden>Modo demo: la clave es <b>demo</b>.</p>
+  </form>
+</div>
 <script src="vendor/jspdf.umd.min.js"></script>
 <script src="vendor/jspdf.plugin.autotable.min.js"></script>
 <script src="config.js"></script>
