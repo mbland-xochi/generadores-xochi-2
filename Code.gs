@@ -16,9 +16,10 @@ var DEFAULTS = {
   umbral_diesel: '70', voltaje_min: '24.5', servicio_intervalo: '500',
   servicio_base_garita1: '0', servicio_base_garita2: '0', servicio_base_garita3: '0', servicio_base_garita4: '0'
 };
-var EDITABLE_SETTINGS = ['servicio_intervalo', 'servicio_base_garita1', 'servicio_base_garita2', 'servicio_base_garita3', 'servicio_base_garita4'];
+var EDITABLE_SETTINGS = ['servicio_intervalo', 'servicio_intervalo_garita1', 'servicio_intervalo_garita2', 'servicio_intervalo_garita3', 'servicio_intervalo_garita4',
+  'servicio_base_garita1', 'servicio_base_garita2', 'servicio_base_garita3', 'servicio_base_garita4'];
 var INITIAL_HEADERS = {
-  Diaria: ['id', 'garita', 'km', 'tecnico', 'fecha', 'hora', 'l1n', 'l2n', 'l1l2', 'a_l1', 'a_l2', 'a_n', 'kwh', 'nivel', 'horas_h', 'horas_m', 'bateria_v', 'notas', 'firma_id', 'alertas', 'ts', 'ts_ms'],
+  Diaria: ['id', 'garita', 'km', 'tecnico', 'fecha', 'hora', 'encendido', 'l1n', 'l2n', 'l1l2', 'a_l1', 'a_l2', 'a_n', 'kwh', 'nivel', 'horas_h', 'horas_m', 'bateria_v', 'notas', 'firma_id', 'alertas', 'ts', 'ts_ms'],
   Semanal: ['id', 'garita', 'km', 'tecnico', 'fecha', 'hora'],
   Compras: ['id', 'garita', 'km', 'tecnico', 'fecha_compra', 'cant_encontrada_gal', 'horas_trabajadas', 'galones_comprados', 'cant_despues_gal', 'precio_total_q', 'no_recibo', 'saldo_uno', 'nivel_encontrado_pct', 'nivel_despues_pct', 'foto_id', 'ts', 'ts_ms']
 };
