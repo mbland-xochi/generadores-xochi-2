@@ -63,7 +63,10 @@
   const sigHTML = (id) => `<div class="fgroup">Firma del técnico <span class="muted" style="text-transform:none;font-weight:400">— obligatoria</span></div><div class="field" data-sig="${id}"><canvas class="sig" id="${id}"></canvas><div class="row end" style="margin-top:6px"><button type="button" class="btn ghost sm" data-clear="${id}">Borrar firma</button></div></div>`;
 
   function buildForms() {
-    $('#formDiaria').innerHTML = groupedHTML(DAILY_FIELDS, 'd_') + sigHTML('sigD') +
+    const dReg = DAILY_FIELDS.filter((f) => f.g === 'Registro'), dEnc = DAILY_FIELDS.filter((f) => f.enc), dRest = DAILY_FIELDS.filter((f) => f.g !== 'Registro' && !f.enc);
+    $('#formDiaria').innerHTML = groupedHTML(dReg, 'd_') +
+      '<label class="check"><input type="checkbox" id="d_encendido"> ¿Generador encendido?</label>' +
+      '<div id="encBox" hidden>' + groupedHTML(dEnc, 'd_') + '</div>' + groupedHTML(dRest, 'd_') + sigHTML('sigD') +
       '<div id="errD"></div><button type="submit" class="btn green submit">Guardar inspección diaria</button>';
 
     const wf = WEEKLY_SECTIONS.map((s) =>
@@ -82,6 +85,7 @@
     document.addEventListener('click', (e) => { const b = e.target.closest('[data-clear]'); if (b) pads[b.dataset.clear].clear(); });
 
     $('#formDiaria').addEventListener('submit', (e) => { e.preventDefault(); submitDaily(); });
+    $('#d_encendido').addEventListener('change', (e) => { $('#encBox').hidden = !e.target.checked; });
     $('#formSemanal').addEventListener('submit', (e) => { e.preventDefault(); submitWeekly(); });
     $('#formCompra').addEventListener('submit', (e) => { e.preventDefault(); submitPurchase(); });
 
@@ -188,7 +192,10 @@
   // ---------- guardar: diaria ----------
   async function submitDaily() {
     const form = $('#formDiaria'), g = garitaById(state.km);
-    const { vals, missing } = readFields(DAILY_FIELDS, 'd_', form);
+    const encendido = $('#d_encendido').checked;
+    const { vals, missing } = readFields(DAILY_FIELDS.filter((f) => !f.enc || encendido), 'd_', form);
+    DAILY_FIELDS.filter((f) => f.enc && !encendido).forEach((f) => (vals[f.k] = ''));   // apagado: voltajes y carga no aplican
+    vals.encendido = encendido ? 'SÍ' : 'NO';
     if (pads.sigD.isEmpty()) { missing.push('Firma del técnico'); $('[data-sig=sigD]').classList.add('err'); }
     if (missing.length) return showErr('errD', missing);
     $('#errD').innerHTML = '';
@@ -202,7 +209,7 @@
       const pdf = () => safePdf(() => PDF.daily(rec, g, firma));
       doneBox('inspDone', 'Inspección diaria guardada · ' + g.km + ' ' + g.nombre, alertas, pdf);
       pdf();
-      pads.sigD.clear(); $('#d_notas').value = ''; $$('input', form).forEach((i) => { if (i.id !== 'd_tecnico') { delete i.dataset.touched; if (!i.dataset.auto) i.value = ''; } }); fillAuto();
+      pads.sigD.clear(); $('#d_notas').value = ''; $$('input', form).forEach((i) => { if (i.type === 'checkbox') { i.checked = false; return; } if (i.id !== 'd_tecnico') { delete i.dataset.touched; if (!i.dataset.auto) i.value = ''; } }); $('#encBox').hidden = true; fillAuto();
     });
   }
 
@@ -356,14 +363,16 @@
 
   // ---------- ajustes ----------
   function openSettings() {
-    $('#sIntervalo').value = cfg(DATA.settings, 'servicio_intervalo');
-    $('#sBases').innerHTML = GARITAS.map((g) => `<div class="field"><label>${g.km} · ${g.nombre} — horas del generador en su último servicio</label><input inputmode="decimal" data-base="${g.id}" value="${cfg(DATA.settings, 'servicio_base_' + g.id)}"></div>`).join('');
+    $('#sBases').innerHTML = GARITAS.map((g) => `<div class="sgroup"><div class="sname">${g.km} · ${g.nombre}</div>
+      <div class="field"><label>Intervalo de servicio general (horas)</label><input inputmode="decimal" data-int="${g.id}" value="${XS.intervalo(DATA.settings, g.id)}"></div>
+      <div class="field"><label>Horas del generador en su último servicio</label><input inputmode="decimal" data-base="${g.id}" value="${cfg(DATA.settings, 'servicio_base_' + g.id)}"></div></div>`).join('');
     $('#modalAjustes').hidden = false;
   }
   $('#btnAjustes').onclick = openSettings;
   $('#sCancel').onclick = () => ($('#modalAjustes').hidden = true);
   $('#sSave').onclick = async () => {
-    const s = { servicio_intervalo: $('#sIntervalo').value.trim().replace(',', '.') };
+    const s = {};
+    $$('[data-int]').forEach((i) => (s['servicio_intervalo_' + i.dataset.int] = i.value.trim().replace(',', '.')));
     $$('[data-base]').forEach((i) => (s['servicio_base_' + i.dataset.base] = i.value.trim().replace(',', '.')));
     if (Object.values(s).some((v) => num(v) == null)) return toast('Todos los valores deben ser numéricos', true);
     try { const r = await API.saveSettings(s); DATA.settings = r.settings || Object.assign(DATA.settings, s); $('#modalAjustes').hidden = true; renderAll(); toast('Ajustes guardados'); }

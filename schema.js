@@ -23,12 +23,12 @@
     { g: 'Registro', k: 'tecnico', label: 'Técnico', ph: 'Nombre del técnico', text: true },
     { g: 'Registro', k: 'fecha', label: 'Fecha', ph: 'dd/mm/aaaa', auto: 'fecha' },
     { g: 'Registro', k: 'hora', label: 'Hora', ph: 'hh:mm', auto: 'hora' },
-    { g: 'Voltajes (V)', k: 'l1n', label: 'L1 / N', num: true },
-    { g: 'Voltajes (V)', k: 'l2n', label: 'L2 / N', num: true },
-    { g: 'Voltajes (V)', k: 'l1l2', label: 'L1 / L2', num: true },
-    { g: 'Carga (A)', k: 'a_l1', label: 'L1', num: true },
-    { g: 'Carga (A)', k: 'a_l2', label: 'L2', num: true },
-    { g: 'Carga (A)', k: 'a_n', label: 'N', num: true },
+    { g: 'Voltajes (V)', k: 'l1n', enc: true, label: 'L1 / N', num: true },
+    { g: 'Voltajes (V)', k: 'l2n', enc: true, label: 'L2 / N', num: true },
+    { g: 'Voltajes (V)', k: 'l1l2', enc: true, label: 'L1 / L2', num: true },
+    { g: 'Carga (A)', k: 'a_l1', enc: true, label: 'L1', num: true },
+    { g: 'Carga (A)', k: 'a_l2', enc: true, label: 'L2', num: true },
+    { g: 'Carga (A)', k: 'a_n', enc: true, label: 'N', num: true },
     { g: 'Contador', k: 'kwh', label: 'kW/h actual', num: true },
     { g: 'Generador', k: 'nivel', label: 'Nivel diésel (%)', num: true },
     { g: 'Generador', k: 'horas_h', label: 'Horas de trabajo (h)', num: true },
@@ -165,12 +165,17 @@
     if (n != null && n < um) out.push('Nivel de diésel ' + n + '% (menor a ' + um + '%): abastecer');
     return out;
   }
+  // Intervalo de servicio por KM; si ese KM no tiene el suyo guardado, usa el general (servicio_intervalo).
+  function intervalo(settings, garitaId) {
+    const v = num(settings && settings['servicio_intervalo_' + garitaId]);
+    return v == null ? cfg(settings, 'servicio_intervalo') : v;
+  }
   function servicio(horas, garitaId, settings) {
     if (horas == null) return null;
-    const base = cfg(settings, 'servicio_base_' + garitaId), inter = cfg(settings, 'servicio_intervalo');
+    const base = cfg(settings, 'servicio_base_' + garitaId), inter = intervalo(settings, garitaId);
     return { restan: inter - (horas - base), intervalo: inter, base };
   }
 
   window.XS = { GARITAS, DEFAULTS, DAILY_FIELDS, WEEKLY_META, WEEKLY_SECTIONS, FOTOS_SEMANAL, PURCHASE_FIELDS,
-    num, hoy, ahora, garitaById, horasDe, cfg, dailyAlerts, weeklyAlerts, servicio };
+    num, hoy, ahora, garitaById, horasDe, cfg, intervalo, dailyAlerts, weeklyAlerts, servicio };
 })();

@@ -120,9 +120,12 @@
   async function daily(rec, g, firma) {
     await ensureLib();
     const doc = newDoc(); let y = header(doc, 'CHECK LIST RUTINARIO — INSPECCIÓN DIARIA', g);
-    y = infoTable(doc, y, [['Garita', g.nombre, 'Kilómetro', g.km], ['Fecha', rec.fecha, 'Hora', rec.hora], ['Técnico', { content: rec.tecnico, colSpan: 3 }]]);
-    y = sectionTable(doc, y, 'VOLTAJES (V)', [{ label: 'L1 / N', value: rec.l1n }, { label: 'L2 / N', value: rec.l2n }, { label: 'L1 / L2', value: rec.l1l2 }]);
-    y = sectionTable(doc, y, 'CARGA (A)', [{ label: 'L1', value: rec.a_l1 }, { label: 'L2', value: rec.a_l2 }, { label: 'N', value: rec.a_n }]);
+    const enc = rec.encendido ? rec.encendido === 'SÍ' : !!(rec.l1n || rec.a_l1);   // registros viejos sin el dato: encendido si traen mediciones
+    y = infoTable(doc, y, [['Garita', g.nombre, 'Kilómetro', g.km], ['Fecha', rec.fecha, 'Hora', rec.hora], ['Técnico', { content: rec.tecnico, colSpan: 3 }], ['Generador encendido', { content: enc ? 'SÍ' : 'NO', colSpan: 3 }]]);
+    if (enc) {
+      y = sectionTable(doc, y, 'VOLTAJES (V)', [{ label: 'L1 / N', value: rec.l1n }, { label: 'L2 / N', value: rec.l2n }, { label: 'L1 / L2', value: rec.l1l2 }]);
+      y = sectionTable(doc, y, 'CARGA (A)', [{ label: 'L1', value: rec.a_l1 }, { label: 'L2', value: rec.a_l2 }, { label: 'N', value: rec.a_n }]);
+    }
     const alerts = (rec.alertas || '');
     y = sectionTable(doc, y, 'CONTADOR Y GENERADOR', [
       { label: 'kW/h actual', value: rec.kwh },
